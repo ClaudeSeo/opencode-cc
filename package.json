@@ -1,0 +1,34 @@
+{
+  "name": "opencode-cc",
+  "version": "0.1.0",
+  "description": "Claude Code compatibility plugin for OpenCode",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "prepare": "bun run build",
+    "build": "tsc && node scripts/prepare-dist-package.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.1.53",
+    "@opencode-ai/sdk": "^1.1.53",
+    "js-yaml": "^4.1.1"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.13.9",
+    "typescript": "^5.8.2",
+    "@types/bun": "latest"
+  },
+  "private": true
+}
