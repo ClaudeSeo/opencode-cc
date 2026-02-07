@@ -11,6 +11,7 @@ export interface OpencodeCcConfig {
     agents?: boolean
     mcp?: boolean
     hooks?: boolean
+    instructions?: boolean
   }
 }
 
@@ -23,6 +24,7 @@ const DEFAULT_CONFIG: OpencodeCcConfig = {
     agents: true,
     mcp: true,
     hooks: true,
+    instructions: true,
   },
 }
 

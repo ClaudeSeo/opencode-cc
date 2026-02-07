@@ -200,6 +200,9 @@ export function discoverInstalledPlugins(options?: PluginLoaderOptions): PluginL
     if (existsSync(join(installPath, "skills"))) {
       loadedPlugin.skillsDir = join(installPath, "skills")
     }
+    if (existsSync(join(installPath, "instructions"))) {
+      loadedPlugin.instructionsDir = join(installPath, "instructions")
+    }
 
     const hooksPath = join(installPath, "hooks", "hooks.json")
     if (existsSync(hooksPath)) {
@@ -444,12 +447,30 @@ export function loadPluginHooksConfigs(
   return configs
 }
 
+export function loadPluginInstructions(
+  plugins: LoadedPlugin[]
+): string[] {
+  const instructions: string[] = []
+
+  for (const plugin of plugins) {
+    if (!plugin.instructionsDir || !existsSync(plugin.instructionsDir)) continue
+
+    // Add glob pattern for all markdown files in the plugin's instructions directory
+    const instructionPattern = join(plugin.instructionsDir, "**", "*.md")
+    instructions.push(instructionPattern)
+    log(`Loaded plugin instructions pattern from ${plugin.name}`, { pattern: instructionPattern })
+  }
+
+  return instructions
+}
+
 export interface PluginComponentsResult {
   commands: Record<string, CommandDefinition>
   skills: Record<string, CommandDefinition>
   agents: Record<string, AgentConfig>
   mcpServers: Record<string, McpServerConfig>
   hooksConfigs: HooksConfig[]
+  instructions: string[]
   plugins: LoadedPlugin[]
   errors: PluginLoadError[]
 }
@@ -464,11 +485,12 @@ export function loadAllPluginComponents(
   const agents = loadPluginAgents(plugins)
   const hooksConfigs = loadPluginHooksConfigs(plugins)
   const mcpServers = loadPluginMcpServers(plugins)
+  const instructions = loadPluginInstructions(plugins)
 
   log(
     `Loaded ${plugins.length} plugins with ${Object.keys(commands).length} commands, ` +
       `${Object.keys(skills).length} skills, ${Object.keys(agents).length} agents, ` +
-      `${Object.keys(mcpServers).length} MCP servers`
+      `${Object.keys(mcpServers).length} MCP servers, ${instructions.length} instruction patterns`
   )
 
   return {
@@ -477,6 +499,7 @@ export function loadAllPluginComponents(
     agents,
     mcpServers,
     hooksConfigs,
+    instructions,
     plugins,
     errors,
   }

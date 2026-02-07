@@ -1,3 +1,5 @@
+import { existsSync, lstatSync, readdirSync, realpathSync } from "node:fs"
+import { join } from "node:path"
 import type { AgentConfig, Config } from "@opencode-ai/sdk"
 import {
   loadUserCommands,
@@ -14,7 +16,7 @@ import {
 import { loadUserAgents, loadProjectAgents } from "../features/claude-code-agent-loader"
 import { loadMcpConfigs } from "../features/claude-code-mcp-loader"
 import { loadAllPluginComponents } from "../features/claude-code-plugin-loader"
-import { log } from "../shared"
+import { getClaudeConfigDir, log } from "../shared"
 import type { OpencodeCcConfig } from "../plugin-config"
 
 export interface ConfigHandlerDeps {
@@ -31,8 +33,106 @@ const EMPTY_PLUGIN_COMPONENTS: PluginComponents = {
   agents: {},
   mcpServers: {},
   hooksConfigs: [],
+  instructions: [],
   plugins: [],
   errors: [],
+}
+
+function getSymlinkInstructionPatterns(rulesDir: string): string[] {
+  if (!existsSync(rulesDir)) return []
+
+  let entries: Array<{ name: string }>
+  try {
+    entries = readdirSync(rulesDir, { withFileTypes: true, encoding: "utf8" })
+  } catch {
+    return []
+  }
+
+  const patterns: string[] = []
+
+  for (const entry of entries) {
+    const entryPath = join(rulesDir, entry.name)
+
+    let linkStat: ReturnType<typeof lstatSync>
+    try {
+      linkStat = lstatSync(entryPath)
+    } catch {
+      continue
+    }
+
+    if (!linkStat.isSymbolicLink()) continue
+
+    let resolvedPath: string
+    try {
+      resolvedPath = realpathSync(entryPath)
+    } catch {
+      continue
+    }
+
+    let resolvedStat: ReturnType<typeof lstatSync>
+    try {
+      resolvedStat = lstatSync(resolvedPath)
+    } catch {
+      continue
+    }
+
+    if (resolvedStat.isDirectory()) {
+      patterns.push(join(resolvedPath, "**", "*.md"))
+      continue
+    }
+
+    if (resolvedStat.isFile() && resolvedPath.toLowerCase().endsWith(".md")) {
+      patterns.push(`${resolvedPath}{,}`)
+    }
+  }
+
+  return patterns
+}
+
+function getRuleInstructionPatterns(rulesDir: string): string[] {
+  const patterns = [join(rulesDir, "**", "*.md")]
+
+  try {
+    const resolvedRulesDir = realpathSync(rulesDir)
+    if (resolvedRulesDir !== rulesDir) {
+      patterns.push(join(resolvedRulesDir, "**", "*.md"))
+    }
+  } catch {
+    // Ignore missing or unreadable rule directories.
+  }
+
+  patterns.push(...getSymlinkInstructionPatterns(rulesDir))
+
+  return patterns
+}
+
+function getDefaultClaudeInstructions(): string[] {
+  const userRulesDir = join(getClaudeConfigDir(), "rules")
+  const projectRulesDir = join(process.cwd(), ".claude", "rules")
+
+  return [...getRuleInstructionPatterns(userRulesDir), ...getRuleInstructionPatterns(projectRulesDir)]
+}
+
+function toInstructionList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+}
+
+function mergeInstructions(existing: unknown, additions: string[]): string[] {
+  const merged = toInstructionList(existing)
+  const seen = new Set(merged)
+
+  for (const addition of additions) {
+    if (!seen.has(addition)) {
+      seen.add(addition)
+      merged.push(addition)
+    }
+  }
+
+  return merged
 }
 
 function loadWhenEnabled<T>(
@@ -69,6 +169,7 @@ export function createConfigHandler(deps: ConfigHandlerDeps) {
     const includeClaudeSkills = claudeConfig?.skills ?? true
     const includeClaudeAgents = claudeConfig?.agents ?? true
     const includeClaudeMcp = claudeConfig?.mcp ?? true
+    const includeClaudeInstructions = claudeConfig?.instructions ?? true
 
     const [
       userCommands,
@@ -139,6 +240,16 @@ export function createConfigHandler(deps: ConfigHandlerDeps) {
       ...opencodeProjectSkills,
       ...pluginComponents.commands,
       ...pluginComponents.skills,
+    }
+
+    if (includeClaudeInstructions) {
+      const configWithInstructions = config as Config & { instructions?: unknown }
+      const mergedInstructions = mergeInstructions(
+        configWithInstructions.instructions,
+        [...getDefaultClaudeInstructions(), ...pluginComponents.instructions]
+      )
+
+      configWithInstructions.instructions = mergedInstructions
     }
   }
 }

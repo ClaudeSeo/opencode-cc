@@ -128,6 +128,7 @@ export interface LoadedPlugin {
   hooksPath?: string
   mcpPath?: string
   lspPath?: string
+  instructionsDir?: string
 }
 
 export interface PluginLoadResult {

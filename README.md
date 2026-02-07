@@ -46,6 +46,15 @@ Loads hook definitions from Claude Code's `settings.json`. Supported hook events
 
 Hooks can block operations, inject messages, or modify tool inputs. Hook configs are cached with a 30-second TTL.
 
+### Instructions
+
+Appends Claude Code rule globs into OpenCode's `instructions` config so Claude-style rule files are loaded without manually listing them:
+
+- `~/.claude/rules/**/*.md`
+- `.claude/rules/**/*.md`
+
+The plugin preserves existing `instructions` values and deduplicates entries.
+
 ### Skills
 
 Loads Claude Code skills (slash commands defined in Markdown files with optional frontmatter). Searched in order:
@@ -87,7 +96,8 @@ Configuration controls which features are enabled. All features default to `true
     "skills": true,
     "agents": true,
     "mcp": true,
-    "hooks": true
+    "hooks": true,
+    "instructions": true
   }
 }
 ```
@@ -109,6 +119,7 @@ Configs are merged in order, with later values overriding earlier ones:
 | `agents` | `boolean` | `true` | Load Claude Code agents |
 | `mcp` | `boolean` | `true` | Load Claude Code MCP server configs |
 | `hooks` | `boolean` | `true` | Execute Claude Code hooks |
+| `instructions` | `boolean` | `true` | Append `~/.claude/rules/**/*.md` and `.claude/rules/**/*.md` to OpenCode `instructions` |
 
 ## Architecture
 
