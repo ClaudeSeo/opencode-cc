@@ -16,7 +16,7 @@
   },
   "scripts": {
     "prepare": "bun run build",
-    "build": "tsc && node scripts/prepare-dist-package.mjs",
+    "build": "tsc && bun scripts/prepare-dist-package.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

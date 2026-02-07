@@ -4,6 +4,20 @@ import { loadPluginConfig } from "./plugin-config"
 import { createConfigHandler } from "./plugin-handlers/config-handler"
 import { listClaudePluginsTool } from "./tools/list-claude-plugins"
 
+function forwardTwoArgHook<TInput, TOutput>(
+  handler?: (input: TInput, output: TOutput) => Promise<void>
+) {
+  return async (input: TInput, output: TOutput) => {
+    await handler?.(input, output)
+  }
+}
+
+function forwardOneArgHook<TInput>(handler?: (input: TInput) => Promise<void>) {
+  return async (input: TInput) => {
+    await handler?.(input)
+  }
+}
+
 const OpencodeCcPlugin: Plugin = async (ctx: PluginInput) => {
   const pluginConfig = loadPluginConfig()
   const claudeCodeHooks = createClaudeCodeHooksHook(ctx, {
@@ -20,21 +34,13 @@ const OpencodeCcPlugin: Plugin = async (ctx: PluginInput) => {
       list_claude_plugins: listClaudePluginsTool,
     },
     config: configHandler,
-    "chat.message": async (input, output) => {
-      await claudeCodeHooks["chat.message"]?.(input, output)
-    },
-    "tool.execute.before": async (input, output) => {
-      await claudeCodeHooks["tool.execute.before"]?.(input, output)
-    },
-    "tool.execute.after": async (input, output) => {
-      await claudeCodeHooks["tool.execute.after"]?.(input, output)
-    },
-    "experimental.session.compacting": async (input, output) => {
-      await claudeCodeHooks["experimental.session.compacting"]?.(input, output)
-    },
-    event: async (input) => {
-      await claudeCodeHooks.event?.(input)
-    },
+    "chat.message": forwardTwoArgHook(claudeCodeHooks["chat.message"]),
+    "tool.execute.before": forwardTwoArgHook(claudeCodeHooks["tool.execute.before"]),
+    "tool.execute.after": forwardTwoArgHook(claudeCodeHooks["tool.execute.after"]),
+    "experimental.session.compacting": forwardTwoArgHook(
+      claudeCodeHooks["experimental.session.compacting"]
+    ),
+    event: forwardOneArgHook(claudeCodeHooks.event),
   }
 
   return hooks

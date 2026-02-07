@@ -64,6 +64,15 @@ function parseAllowedTools(allowedTools: string | undefined): string[] | undefin
   return allowedTools.split(/\s+/).filter(Boolean)
 }
 
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await fs.access(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function loadSkillFromPath(
   skillPath: string,
   resolvedPath: string,
@@ -143,21 +152,17 @@ async function loadSkillsFromDir(
       const dirName = entry.name
 
       const skillMdPath = join(resolvedPath, "SKILL.md")
-      try {
-        await fs.access(skillMdPath)
+      if (await fileExists(skillMdPath)) {
         const skill = await loadSkillFromPath(skillMdPath, resolvedPath, dirName, scope)
         if (skill) skills.push(skill)
         continue
-      } catch {
       }
 
       const namedSkillMdPath = join(resolvedPath, `${dirName}.md`)
-      try {
-        await fs.access(namedSkillMdPath)
+      if (await fileExists(namedSkillMdPath)) {
         const skill = await loadSkillFromPath(namedSkillMdPath, resolvedPath, dirName, scope)
         if (skill) skills.push(skill)
         continue
-      } catch {
       }
 
       continue

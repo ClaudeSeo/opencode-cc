@@ -22,6 +22,27 @@ export interface ConfigHandlerDeps {
   pluginConfig: OpencodeCcConfig
 }
 
+type PluginComponents = Awaited<ReturnType<typeof loadAllPluginComponents>>
+type CommandMap = Awaited<ReturnType<typeof loadUserCommands>>
+
+const EMPTY_PLUGIN_COMPONENTS: PluginComponents = {
+  commands: {},
+  skills: {},
+  agents: {},
+  mcpServers: {},
+  hooksConfigs: [],
+  plugins: [],
+  errors: [],
+}
+
+function loadWhenEnabled<T>(
+  enabled: boolean,
+  loader: () => Promise<T>,
+  fallback: T
+): Promise<T> {
+  return enabled ? loader() : Promise.resolve(fallback)
+}
+
 export function createConfigHandler(deps: ConfigHandlerDeps) {
   const { pluginConfig } = deps
 
@@ -32,15 +53,7 @@ export function createConfigHandler(deps: ConfigHandlerDeps) {
       ? await loadAllPluginComponents({
           enabledPluginsOverride: claudeConfig?.plugins_override,
         })
-      : {
-          commands: {},
-          skills: {},
-          agents: {},
-          mcpServers: {},
-          hooksConfigs: [],
-          plugins: [],
-          errors: [],
-        }
+      : EMPTY_PLUGIN_COMPONENTS
 
     if (pluginComponents.plugins.length > 0) {
       log(`Loaded ${pluginComponents.plugins.length} Claude Code plugins`, {
@@ -67,12 +80,28 @@ export function createConfigHandler(deps: ConfigHandlerDeps) {
       opencodeGlobalSkills,
       opencodeProjectSkills,
     ] = await Promise.all([
-      includeClaudeCommands ? loadUserCommands() : Promise.resolve({}),
-      includeClaudeCommands ? loadProjectCommands() : Promise.resolve({}),
+      loadWhenEnabled(
+        includeClaudeCommands,
+        loadUserCommands,
+        {} as Awaited<ReturnType<typeof loadUserCommands>>
+      ),
+      loadWhenEnabled(
+        includeClaudeCommands,
+        loadProjectCommands,
+        {} as Awaited<ReturnType<typeof loadProjectCommands>>
+      ),
       loadOpencodeGlobalCommands(),
       loadOpencodeProjectCommands(),
-      includeClaudeSkills ? loadUserSkills() : Promise.resolve({}),
-      includeClaudeSkills ? loadProjectSkills() : Promise.resolve({}),
+      loadWhenEnabled(
+        includeClaudeSkills,
+        loadUserSkills,
+        {} as Awaited<ReturnType<typeof loadUserSkills>>
+      ),
+      loadWhenEnabled(
+        includeClaudeSkills,
+        loadProjectSkills,
+        {} as Awaited<ReturnType<typeof loadProjectSkills>>
+      ),
       loadOpencodeGlobalSkills(),
       loadOpencodeProjectSkills(),
     ])
@@ -96,7 +125,7 @@ export function createConfigHandler(deps: ConfigHandlerDeps) {
       ...pluginComponents.mcpServers,
     }
 
-    const systemCommands = (config.command as Record<string, unknown>) ?? {}
+    const systemCommands = (config.command ?? {}) as CommandMap
 
     config.command = {
       ...systemCommands,
