@@ -51,7 +51,9 @@ Hooks can block operations, inject messages, or modify tool inputs. Hook configs
 Appends Claude Code rule globs into OpenCode's `instructions` config so Claude-style rule files are loaded without manually listing them:
 
 - `~/.claude/rules/**/*.md`
+- `~/.cursor/rules/**/*.md`
 - `.claude/rules/**/*.md`
+- `.cursor/rules/**/*.md`
 
 The plugin preserves existing `instructions` values and deduplicates entries.
 
@@ -119,7 +121,7 @@ Configs are merged in order, with later values overriding earlier ones:
 | `agents` | `boolean` | `true` | Load Claude Code agents |
 | `mcp` | `boolean` | `true` | Load Claude Code MCP server configs |
 | `hooks` | `boolean` | `true` | Execute Claude Code hooks |
-| `instructions` | `boolean` | `true` | Append `~/.claude/rules/**/*.md` and `.claude/rules/**/*.md` to OpenCode `instructions` |
+| `instructions` | `boolean` | `true` | Append `~/.claude/rules/**/*.md`, `~/.cursor/rules/**/*.md`, `.claude/rules/**/*.md`, and `.cursor/rules/**/*.md` to OpenCode `instructions` |
 
 ## Architecture
 

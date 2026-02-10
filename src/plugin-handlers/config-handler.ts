@@ -1,5 +1,6 @@
 import { existsSync, lstatSync, readdirSync, realpathSync } from "node:fs"
-import { join } from "node:path"
+import { homedir } from "node:os"
+import { isAbsolute, join } from "node:path"
 import type { AgentConfig, Config } from "@opencode-ai/sdk"
 import {
   loadUserCommands,
@@ -94,7 +95,7 @@ function getRuleInstructionPatterns(rulesDir: string): string[] {
 
   try {
     const resolvedRulesDir = realpathSync(rulesDir)
-    if (resolvedRulesDir !== rulesDir) {
+    if (isAbsolute(rulesDir) && resolvedRulesDir !== rulesDir) {
       patterns.push(join(resolvedRulesDir, "**", "*.md"))
     }
   } catch {
@@ -107,10 +108,13 @@ function getRuleInstructionPatterns(rulesDir: string): string[] {
 }
 
 function getDefaultClaudeInstructions(): string[] {
-  const userRulesDir = join(getClaudeConfigDir(), "rules")
-  const projectRulesDir = join(process.cwd(), ".claude", "rules")
+  const userRulesDirs = [join(getClaudeConfigDir(), "rules"), join(homedir(), ".cursor", "rules")]
+  const projectRulesDirs = [join(".claude", "rules"), join(".cursor", "rules")]
 
-  return [...getRuleInstructionPatterns(userRulesDir), ...getRuleInstructionPatterns(projectRulesDir)]
+  return [
+    ...userRulesDirs.flatMap((rulesDir) => getRuleInstructionPatterns(rulesDir)),
+    ...projectRulesDirs.flatMap((rulesDir) => getRuleInstructionPatterns(rulesDir)),
+  ]
 }
 
 function toInstructionList(value: unknown): string[] {
