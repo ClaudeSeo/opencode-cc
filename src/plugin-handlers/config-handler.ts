@@ -16,7 +16,7 @@ import {
 } from "../features/opencode-skill-loader"
 import { loadUserAgents, loadProjectAgents } from "../features/claude-code-agent-loader"
 import { loadMcpConfigs } from "../features/claude-code-mcp-loader"
-import { loadAllPluginComponents } from "../features/claude-code-plugin-loader"
+import { loadAllPluginComponents, loadPluginMcpServers } from "../features/claude-code-plugin-loader"
 import { getClaudeConfigDir, log } from "../shared"
 import type { OpencodeCcConfig } from "../plugin-config"
 
@@ -27,6 +27,13 @@ export interface ConfigHandlerDeps {
 
 type PluginComponents = Awaited<ReturnType<typeof loadAllPluginComponents>>
 type CommandMap = Awaited<ReturnType<typeof loadUserCommands>>
+type McpServerMap = Awaited<ReturnType<typeof loadPluginMcpServers>>
+
+interface McpSourceCounts {
+  system: number
+  plugin: number
+  merged: number
+}
 
 const EMPTY_PLUGIN_COMPONENTS: PluginComponents = {
   commands: {},
@@ -147,35 +154,91 @@ function loadWhenEnabled<T>(
   return enabled ? loader() : Promise.resolve(fallback)
 }
 
+function applyMcpOverride(
+  servers: McpServerMap,
+  override?: Record<string, boolean>
+): McpServerMap {
+  if (!override) return servers
+
+  const filtered: McpServerMap = { ...servers }
+  for (const [serverName, enabled] of Object.entries(override)) {
+    if (enabled === false) {
+      delete filtered[serverName]
+    }
+  }
+
+  return filtered
+}
+
 export function createConfigHandler(deps: ConfigHandlerDeps) {
   const { pluginConfig } = deps
+  let lazyMcpWarmupStarted = false
+  let lazyMcpWarmupPromise: Promise<void> | undefined
+  let lazyMcpMergedServers: McpServerMap | undefined
+  let lazyMcpSourceCounts: McpSourceCounts | undefined
+
+  function startLazyMcpWarmup(plugins: PluginComponents["plugins"]) {
+    if (lazyMcpWarmupStarted) return
+    lazyMcpWarmupStarted = true
+
+    log("Starting lazy MCP warmup", { pluginCount: plugins.length })
+
+    lazyMcpWarmupPromise = (async () => {
+      try {
+        const [systemMcpResult, pluginMcpServers] = await Promise.all([
+          loadMcpConfigs(),
+          loadPluginMcpServers(plugins),
+        ])
+
+        lazyMcpMergedServers = {
+          ...systemMcpResult.servers,
+          ...pluginMcpServers,
+        }
+        lazyMcpSourceCounts = {
+          system: Object.keys(systemMcpResult.servers).length,
+          plugin: Object.keys(pluginMcpServers).length,
+          merged: Object.keys(lazyMcpMergedServers).length,
+        }
+
+        log("Lazy MCP warmup completed", lazyMcpSourceCounts)
+      } catch (error) {
+        log("Lazy MCP warmup failed", error)
+      } finally {
+        lazyMcpWarmupPromise = undefined
+      }
+    })()
+  }
 
   return async (config: Config) => {
+    const handlerStartMs = Date.now()
     const claudeConfig = pluginConfig.claude_code
-
-    const pluginComponents = claudeConfig?.plugins ?? true
-      ? await loadAllPluginComponents({
-          enabledPluginsOverride: claudeConfig?.plugins_override,
-        })
-      : EMPTY_PLUGIN_COMPONENTS
-
-    if (pluginComponents.plugins.length > 0) {
-      log(`Loaded ${pluginComponents.plugins.length} Claude Code plugins`, {
-        plugins: pluginComponents.plugins.map((p) => `${p.name}@${p.version}`),
-      })
-    }
-
-    if (pluginComponents.errors.length > 0) {
-      log("Plugin load errors", { errors: pluginComponents.errors })
-    }
 
     const includeClaudeCommands = claudeConfig?.commands ?? true
     const includeClaudeSkills = claudeConfig?.skills ?? true
     const includeClaudeAgents = claudeConfig?.agents ?? true
     const includeClaudeMcp = claudeConfig?.mcp ?? true
+    const includeClaudeHooks = claudeConfig?.hooks ?? true
     const includeClaudeInstructions = claudeConfig?.instructions ?? true
+    const mcpMode = claudeConfig?.mcp_mode ?? "eager"
 
+    const pluginComponentsPromise =
+      claudeConfig?.plugins ?? true
+        ? loadAllPluginComponents({
+            enabledPluginsOverride: claudeConfig?.plugins_override,
+            include: {
+              commands: includeClaudeCommands,
+              skills: includeClaudeSkills,
+              agents: includeClaudeAgents,
+              mcpServers: includeClaudeMcp && mcpMode === "eager",
+              hooks: includeClaudeHooks,
+              instructions: includeClaudeInstructions,
+            },
+          })
+        : Promise.resolve(EMPTY_PLUGIN_COMPONENTS)
+
+    const parallelLoaderStartMs = Date.now()
     const [
+      pluginComponents,
       userCommands,
       projectCommands,
       opencodeGlobalCommands,
@@ -185,6 +248,7 @@ export function createConfigHandler(deps: ConfigHandlerDeps) {
       opencodeGlobalSkills,
       opencodeProjectSkills,
     ] = await Promise.all([
+      pluginComponentsPromise,
       loadWhenEnabled(
         includeClaudeCommands,
         loadUserCommands,
@@ -210,9 +274,25 @@ export function createConfigHandler(deps: ConfigHandlerDeps) {
       loadOpencodeGlobalSkills(),
       loadOpencodeProjectSkills(),
     ])
+    const parallelLoaderMs = Date.now() - parallelLoaderStartMs
 
+    if (pluginComponents.plugins.length > 0) {
+      log(`Loaded ${pluginComponents.plugins.length} Claude Code plugins`, {
+        plugins: pluginComponents.plugins.map((p) => `${p.name}@${p.version}`),
+      })
+    }
+
+    if (pluginComponents.errors.length > 0) {
+      log("Plugin load errors", { errors: pluginComponents.errors })
+    }
+
+    const agentLoadingStartMs = Date.now()
     const userAgents = includeClaudeAgents ? loadUserAgents() : {}
     const projectAgents = includeClaudeAgents ? loadProjectAgents() : {}
+    const agentLoadingMs = Date.now() - agentLoadingStartMs
+
+    let mergeApplyMs = 0
+    const mergeAgentStartMs = Date.now()
 
     config.agent = {
       ...(config.agent as Record<string, AgentConfig> | undefined),
@@ -220,16 +300,41 @@ export function createConfigHandler(deps: ConfigHandlerDeps) {
       ...projectAgents,
       ...pluginComponents.agents,
     }
+    mergeApplyMs += Date.now() - mergeAgentStartMs
 
-    const mcpResult = includeClaudeMcp ? await loadMcpConfigs() : { servers: {} }
+    const mcpLoadingStartMs = Date.now()
+    const mcpResult =
+      includeClaudeMcp && mcpMode === "eager" ? await loadMcpConfigs() : { servers: {} as McpServerMap }
+    const mcpLoadingMs = Date.now() - mcpLoadingStartMs
 
+    if (includeClaudeMcp && mcpMode === "lazy") {
+      startLazyMcpWarmup(pluginComponents.plugins)
+    }
+
+    const mcpSourceCounts: McpSourceCounts = includeClaudeMcp
+      ? mcpMode === "eager"
+        ? {
+            system: Object.keys(mcpResult.servers).length,
+            plugin: Object.keys(pluginComponents.mcpServers).length,
+            merged: Object.keys({ ...mcpResult.servers, ...pluginComponents.mcpServers }).length,
+          }
+        : lazyMcpSourceCounts ?? { system: 0, plugin: 0, merged: 0 }
+      : { system: 0, plugin: 0, merged: 0 }
+
+    const lazyMcpServers = mcpMode === "lazy" ? lazyMcpMergedServers ?? ({} as McpServerMap) : ({} as McpServerMap)
+
+    const mergeMcpStartMs = Date.now()
     const existingMcp = (config.mcp || {}) as Config["mcp"]
-    config.mcp = {
+    const mergedMcpServers: McpServerMap = {
       ...existingMcp,
       ...mcpResult.servers,
       ...pluginComponents.mcpServers,
+      ...lazyMcpServers,
     }
+    config.mcp = applyMcpOverride(mergedMcpServers, claudeConfig?.mcp_override)
+    mergeApplyMs += Date.now() - mergeMcpStartMs
 
+    const mergeCommandStartMs = Date.now()
     const systemCommands = (config.command ?? {}) as CommandMap
 
     config.command = {
@@ -245,8 +350,10 @@ export function createConfigHandler(deps: ConfigHandlerDeps) {
       ...pluginComponents.commands,
       ...pluginComponents.skills,
     }
+    mergeApplyMs += Date.now() - mergeCommandStartMs
 
     if (includeClaudeInstructions) {
+      const mergeInstructionsStartMs = Date.now()
       const configWithInstructions = config as Config & { instructions?: unknown }
       const mergedInstructions = mergeInstructions(
         configWithInstructions.instructions,
@@ -254,6 +361,55 @@ export function createConfigHandler(deps: ConfigHandlerDeps) {
       )
 
       configWithInstructions.instructions = mergedInstructions
+      mergeApplyMs += Date.now() - mergeInstructionsStartMs
     }
+
+    const finalMcpServerCount =
+      config.mcp && typeof config.mcp === "object" ? Object.keys(config.mcp).length : 0
+
+    log("Config handler timings", {
+      totalMs: Date.now() - handlerStartMs,
+      parallelLoaderMs,
+      agentLoadingMs,
+      mcpLoadingMs,
+      mergeApplyMs,
+      mcpMode,
+      mcpWarmupState:
+        mcpMode === "lazy"
+          ? lazyMcpMergedServers
+            ? "ready"
+            : lazyMcpWarmupPromise
+              ? "warming"
+              : lazyMcpWarmupStarted
+                ? "pending"
+                : "idle"
+          : "n/a",
+      pluginCount: pluginComponents.plugins.length,
+      pluginErrorCount: pluginComponents.errors.length,
+      commandCounts: {
+        user: Object.keys(userCommands).length,
+        project: Object.keys(projectCommands).length,
+        opencodeGlobal: Object.keys(opencodeGlobalCommands).length,
+        opencodeProject: Object.keys(opencodeProjectCommands).length,
+        pluginCommands: Object.keys(pluginComponents.commands).length,
+        pluginSkills: Object.keys(pluginComponents.skills).length,
+      },
+      skillCounts: {
+        user: Object.keys(userSkills).length,
+        project: Object.keys(projectSkills).length,
+        opencodeGlobal: Object.keys(opencodeGlobalSkills).length,
+        opencodeProject: Object.keys(opencodeProjectSkills).length,
+      },
+      agentCount: Object.keys(userAgents).length + Object.keys(projectAgents).length,
+      pluginAgentCount: Object.keys(pluginComponents.agents).length,
+      mcpServerCount: mcpSourceCounts.system,
+      pluginMcpServerCount: mcpSourceCounts.plugin,
+      mergedMcpServerCount: mcpSourceCounts.merged,
+      finalMcpServerCount,
+      instructionCount: includeClaudeInstructions
+        ? ((config as Config & { instructions?: unknown }).instructions as unknown[] | undefined)?.length ?? 0
+        : 0,
+      pluginInstructionCount: pluginComponents.instructions.length,
+    })
   }
 }

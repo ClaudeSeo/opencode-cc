@@ -94,6 +94,10 @@ Configuration controls which features are enabled. All features default to `true
     "plugins_override": {
       "my-plugin@claude-marketplace": true
     },
+    "mcp_mode": "eager",
+    "mcp_override": {
+      "my-plugin@claude-marketplace:docs": false
+    },
     "commands": true,
     "skills": true,
     "agents": true,
@@ -116,6 +120,8 @@ Configs are merged in order, with later values overriding earlier ones:
 |--------|------|---------|-------------|
 | `plugins` | `boolean` | `true` | Load installed Claude Code plugins |
 | `plugins_override` | `Record<string, boolean>` | `undefined` | Enable/disable specific plugins by name |
+| `mcp_mode` | `"eager" \| "lazy"` | `"eager"` | MCP loading mode; `lazy` prioritizes slash/command readiness and loads MCP asynchronously |
+| `mcp_override` | `Record<string, boolean>` | `undefined` | Enable/disable specific MCP servers by name after MCP merge (`false` removes, `true` keeps if present) |
 | `commands` | `boolean` | `true` | Load Claude Code commands |
 | `skills` | `boolean` | `true` | Load Claude Code skills |
 | `agents` | `boolean` | `true` | Load Claude Code agents |

@@ -147,6 +147,16 @@ export interface ClaudeSettings {
   [key: string]: unknown
 }
 
+export interface PluginComponentIncludeOptions {
+  commands?: boolean
+  skills?: boolean
+  agents?: boolean
+  mcpServers?: boolean
+  hooks?: boolean
+  instructions?: boolean
+}
+
 export interface PluginLoaderOptions {
   enabledPluginsOverride?: Record<string, boolean>
+  include?: PluginComponentIncludeOptions
 }

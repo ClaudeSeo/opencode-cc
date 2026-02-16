@@ -6,6 +6,8 @@ export interface OpencodeCcConfig {
   claude_code?: {
     plugins?: boolean
     plugins_override?: Record<string, boolean>
+    mcp_mode?: "eager" | "lazy"
+    mcp_override?: Record<string, boolean>
     commands?: boolean
     skills?: boolean
     agents?: boolean
@@ -19,6 +21,8 @@ const DEFAULT_CONFIG: OpencodeCcConfig = {
   claude_code: {
     plugins: true,
     plugins_override: undefined,
+    mcp_mode: "eager",
+    mcp_override: undefined,
     commands: true,
     skills: true,
     agents: true,
@@ -45,6 +49,10 @@ function mergeConfig(base: OpencodeCcConfig, override?: OpencodeCcConfig): Openc
       plugins_override: {
         ...base.claude_code?.plugins_override,
         ...override.claude_code?.plugins_override,
+      },
+      mcp_override: {
+        ...base.claude_code?.mcp_override,
+        ...override.claude_code?.mcp_override,
       },
     },
   }
