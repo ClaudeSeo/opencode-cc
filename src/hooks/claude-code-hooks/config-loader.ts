@@ -68,14 +68,6 @@ export async function loadPluginExtendedConfig(): Promise<PluginExtendedConfig> 
     ),
   }
 
-  if (userConfig || projectConfig) {
-    log("Plugin extended config loaded", {
-      userConfigExists: userConfig !== null,
-      projectConfigExists: projectConfig !== null,
-      mergedDisabledHooks: merged.disabledHooks,
-    })
-  }
-
   return merged
 }
 

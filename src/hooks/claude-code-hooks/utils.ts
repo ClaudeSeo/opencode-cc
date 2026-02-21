@@ -2,12 +2,19 @@ import type { HookMatcher, ClaudeHooksConfig, HookResult } from "./types"
 export { transformToolName } from "../../shared/tool-name"
 
 // Intentionally different prefix from shared/logger.ts "[opencode-cc]" — sub-scoped to "[opencode-cc][claude-hooks]"
+function isDebugEnabled(): boolean {
+  const debug = process.env.OPENCODE_CC_DEBUG?.toLowerCase()
+  return debug === "1" || debug === "true"
+}
+
 export function log(message: string, data?: unknown): void {
+  if (!isDebugEnabled()) return
+
   if (data) {
-    console.log(`[opencode-cc][claude-hooks] ${message}`, data)
+    console.error(`[opencode-cc][claude-hooks] ${message}`, data)
     return
   }
-  console.log(`[opencode-cc][claude-hooks] ${message}`)
+  console.error(`[opencode-cc][claude-hooks] ${message}`)
 }
 
 const MAX_PATTERN_LENGTH = 200
